@@ -245,31 +245,29 @@ class SwiftKernelTests(jupyter_kernel_test.KernelTests):
         """)
         self.assertEqual(reply['content']['status'], 'ok')
         self.assertEqual(
-            dict((k, output_msgs[0][k]) for k in ['msg_type', 'content']),
+            {k: output_msgs[0][k] for k in ['msg_type', 'content']},
             {
                 'msg_type': 'stream',
                 'content': {
                     'name': 'stdout',
                     'text': 'before the clear\r\n',
                 },
-            })
+            },
+        )
         self.assertEqual(
-            dict((k, output_msgs[1][k]) for k in ['msg_type', 'content']),
-            {
-                'msg_type': 'clear_output',
-                'content': {
-                    'wait': False
-                }
-            })
+            {k: output_msgs[1][k] for k in ['msg_type', 'content']},
+            {'msg_type': 'clear_output', 'content': {'wait': False}},
+        )
         self.assertEqual(
-            dict((k, output_msgs[2][k]) for k in ['msg_type', 'content']),
+            {k: output_msgs[2][k] for k in ['msg_type', 'content']},
             {
                 'msg_type': 'stream',
                 'content': {
                     'name': 'stdout',
                     'text': '\r\nafter the clear\r\n',
                 },
-            })
+            },
+        )
 
     def test_show_tensor(self):
         reply, output_msgs = self.execute_helper(code="""
@@ -337,13 +335,12 @@ class OwnKernelTests(unittest.TestCase):
         """)
         messages = self.wait_for_idle(kc)
 
-        # DummyPackage doesn't exist, so package installation won't actually
-        # succeed. So we just assert that the kernel tries to install it.
-        stdout = ''
-        for message in messages:
-            if message['header']['msg_type'] == 'stream' and \
-                    message['content']['name'] == 'stdout':
-                stdout += message['content']['text']
+        stdout = ''.join(
+            message['content']['text']
+            for message in messages
+            if message['header']['msg_type'] == 'stream'
+            and message['content']['name'] == 'stdout'
+        )
         self.assertIn('Installing packages:', stdout)
 
     def wait_for_idle(self, kc):

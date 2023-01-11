@@ -173,7 +173,7 @@ class NotebookTestRunner:
             # in this cell.
             # Otherwise, ask for a completion every `char_step` chars.
             if self.char_step > 0 and \
-                    len(failed_completions[cell_index]) < 3:
+                        len(failed_completions[cell_index]) < 3:
                 for char_index in range(0, len(cell.source), self.char_step):
                     if char_index in failed_completions[cell_index]:
                         continue
@@ -203,7 +203,7 @@ class NotebookTestRunner:
                 # Don't report completion timings in cells with failed
                 # completions, because they might be misleading.
                 report += ' - completion error(s) occurred'
-            elif len(completion_times) == 0:
+            elif not completion_times:
                 report += ' - no completions performed'
             else:
                 report += ' - complete p50 %.0f ms' % (
@@ -217,11 +217,7 @@ class NotebookTestRunner:
 
     def _record_error(self, e):
         cell = self.code_cells[e.cell_index]
-        if hasattr(e, 'char_index'):
-            code = cell.source[:e.char_index]
-        else:
-            code = cell.source
-
+        code = cell.source[:e.char_index] if hasattr(e, 'char_index') else cell.source
         error_description = {
             'error': e,
             'code': code,
