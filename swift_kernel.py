@@ -73,8 +73,7 @@ class SuccessWithValue(ExecutionResultSuccess):
         return stream.GetData()
 
     def __repr__(self):
-        return 'SuccessWithValue(result=%s, description=%s)' % (
-            repr(self.result), repr(self.result.description))
+        return f'SuccessWithValue(result={repr(self.result)}, description={repr(self.result.description)})'
 
 
 class PreprocessorError(ExecutionResultError):
@@ -86,7 +85,7 @@ class PreprocessorError(ExecutionResultError):
         return str(self.exception)
 
     def __repr__(self):
-        return 'PreprocessorError(exception=%s)' % repr(self.exception)
+        return f'PreprocessorError(exception={repr(self.exception)})'
 
 
 class PreprocessorException(Exception):
@@ -106,8 +105,7 @@ class SwiftError(ExecutionResultError):
         return self.result.error.description
 
     def __repr__(self):
-        return 'SwiftError(result=%s, description=%s)' % (
-            repr(self.result), repr(self.description()))
+        return f'SwiftError(result={repr(self.result)}, description={repr(self.description())})'
 
 
 class SIGINTHandler(threading.Thread):
@@ -126,7 +124,7 @@ class SIGINTHandler(threading.Thread):
                 signal.sigwait([signal.SIGINT])
                 self.kernel.process.SendAsyncInterrupt()
         except Exception as e:
-            self.kernel.log.error('Exception in SIGINTHandler: %s' % str(e))
+            self.kernel.log.error(f'Exception in SIGINTHandler: {str(e)}')
 
 
 class StdoutHandler(threading.Thread):
@@ -141,8 +139,8 @@ class StdoutHandler(threading.Thread):
         self.had_stdout = False
 
     def _get_stdout(self):
+        BUFFER_SIZE = 1000
         while True:
-            BUFFER_SIZE = 1000
             stdout_buffer = self.kernel.process.GetSTDOUT(BUFFER_SIZE)
             if len(stdout_buffer) == 0:
                 break
@@ -167,20 +165,18 @@ class StdoutHandler(threading.Thread):
             })
 
     def _get_and_send_stdout(self):
-        stdout = ''.join([buf for buf in self._get_stdout()])
-        if len(stdout) > 0:
+        stdout = ''.join(list(self._get_stdout()))
+        if stdout != "":
             self.had_stdout = True
             self._send_stdout(stdout)
 
     def run(self):
         try:
-            while True:
-                if self.stop_event.wait(0.1):
-                    break
+            while not self.stop_event.wait(0.1):
                 self._get_and_send_stdout()
             self._get_and_send_stdout()
         except Exception as e:
-            self.kernel.log.error('Exception in StdoutHandler: %s' % str(e))
+            self.kernel.log.error(f'Exception in StdoutHandler: {str(e)}')
 
 
 class SwiftKernel(Kernel):
@@ -230,7 +226,9 @@ class SwiftKernel(Kernel):
         self.debugger.SetAsync(False)
 
         if hasattr(self, 'swift_module_search_path'):
-            self.debugger.HandleCommand("settings append target.swift-module-search-paths " + self.swift_module_search_path)
+            self.debugger.HandleCommand(
+                f"settings append target.swift-module-search-paths {self.swift_module_search_path}"
+            )
 
 
         # LLDB crashes while trying to load some Python stuff on Mac. Maybe
@@ -242,25 +240,24 @@ class SwiftKernel(Kernel):
         repl_swift = os.environ['REPL_SWIFT_PATH']
         self.target = self.debugger.CreateTargetWithFileAndArch(repl_swift, '')
         if not self.target:
-            raise Exception('Could not create target %s' % repl_swift)
+            raise Exception(f'Could not create target {repl_swift}')
 
         self.main_bp = self.target.BreakpointCreateByName(
             'repl_main', self.target.GetExecutable().GetFilename())
         if not self.main_bp:
             raise Exception('Could not set breakpoint')
 
-        repl_env = []
         script_dir = os.path.dirname(os.path.realpath(sys.argv[0]))
-        repl_env.append('PYTHONPATH=%s' % script_dir)
+        repl_env = [f'PYTHONPATH={script_dir}']
         env_var_blacklist = [
             'PYTHONPATH',
             'REPL_SWIFT_PATH'
         ]
-        for key in os.environ:
-            if key in env_var_blacklist:
-                continue
-            repl_env.append('%s=%s' % (key, os.environ[key]))
-
+        repl_env.extend(
+            f'{key}={os.environ[key]}'
+            for key in os.environ
+            if key not in env_var_blacklist
+        )
         # Turn off "disable ASLR" because it uses the "personality" syscall in
         # a way that is forbidden by the default Docker security policy.
         launch_info = self.target.GetLaunchInfo()
@@ -292,7 +289,7 @@ class SwiftKernel(Kernel):
         result = self._preprocess_and_execute(
                 '%include "KernelCommunicator.swift"')
         if isinstance(result, ExecutionResultError):
-            raise Exception('Error initing KernelCommunicator: %s' % result)
+            raise Exception(f'Error initing KernelCommunicator: {result}')
 
         session_key = self.session.key.decode('utf8')
         decl_code = """
@@ -305,13 +302,12 @@ class SwiftKernel(Kernel):
                json.dumps(self.session.username))
         result = self._preprocess_and_execute(decl_code)
         if isinstance(result, ExecutionResultError):
-            raise Exception('Error declaring JupyterKernel: %s' % result)
+            raise Exception(f'Error declaring JupyterKernel: {result}')
 
     def _init_int_bitwidth(self):
         result = self._execute('Int.bitWidth')
         if not isinstance(result, SuccessWithValue):
-            raise Exception('Expected value from Int.bitWidth, but got: %s' %
-                            result)
+            raise Exception(f'Expected value from Int.bitWidth, but got: {result}')
         self._int_bitwidth = int(result.result.GetData().GetSignedInt32(lldb.SBError(), 0))
 
     def _init_sigint_handler(self):
@@ -365,7 +361,7 @@ class SwiftKernel(Kernel):
 
         include_match = re.match(r'^\s*%include (.*)$', line)
         if include_match is not None:
-            return self._read_include(line_index, include_match.group(1))
+            return self._read_include(line_index, include_match[1])
 
         disable_completion_match = re.match(r'^\s*%disableCompletion\s*$', line)
         if disable_completion_match is not None:
@@ -385,7 +381,7 @@ class SwiftKernel(Kernel):
             raise PreprocessorException(
                     'Line %d: %%include must be followed by a name in quotes' % (
                             line_index + 1))
-        name = name_match.group(1)
+        name = name_match[1]
 
         include_paths = [
             os.path.dirname(os.path.realpath(sys.argv[0])),
@@ -405,13 +401,15 @@ class SwiftKernel(Kernel):
                     'Line %d: Could not find "%s". Searched %s.' % (
                             line_index + 1, name, include_paths))
 
-        return '\n'.join([
-            '#sourceLocation(file: "%s", line: 1)' % name,
-            code,
-            '#sourceLocation(file: "%s", line: %d)' % (
-                self._file_name_for_source_location(), line_index + 1),
-            ''
-        ])
+        return '\n'.join(
+            [
+                f'#sourceLocation(file: "{name}", line: 1)',
+                code,
+                '#sourceLocation(file: "%s", line: %d)'
+                % (self._file_name_for_source_location(), line_index + 1),
+                '',
+            ]
+        )
 
     def _process_installs(self, code):
         """Handles all "%install" directives, and returns `code` with all
@@ -447,7 +445,7 @@ class SwiftKernel(Kernel):
         if install_location_match is None:
             return line, None
 
-        install_location = install_location_match.group(1)
+        install_location = install_location_match[1]
         try:
             install_location = string.Template(install_location).substitute({"cwd": os.getcwd()})
         except KeyError as e:
@@ -466,7 +464,7 @@ class SwiftKernel(Kernel):
         if extra_include_command_match is None:
             return line, None
 
-        extra_include_command = extra_include_command_match.group(1)
+        extra_include_command = extra_include_command_match[1]
 
         return '', extra_include_command
 
@@ -475,7 +473,7 @@ class SwiftKernel(Kernel):
                 r'^\s*%install-swiftpm-flags (.*)$', line)
         if install_swiftpm_flags_match is None:
             return line, []
-        flags = shlex.split(install_swiftpm_flags_match.group(1))
+        flags = shlex.split(install_swiftpm_flags_match[1])
         return '', flags
 
     def _process_install_line(self, line_index, line):
@@ -483,7 +481,7 @@ class SwiftKernel(Kernel):
         if install_match is None:
             return line, []
 
-        parsed = shlex.split(install_match.group(1))
+        parsed = shlex.split(install_match[1])
         if len(parsed) < 2:
             raise PackageInstallException(
                     'Line %d: %%install usage: SPEC PRODUCT [PRODUCT ...]' % (
@@ -512,17 +510,18 @@ class SwiftKernel(Kernel):
             raise PackageInstallException(
                     'System commands can only run in the first cell.')
 
-        rest_of_line = system_match.group(1)
+        rest_of_line = system_match[1]
         process = subprocess.Popen(rest_of_line,
                             stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT,
                             shell=True)
         process.wait()
         command_result = process.stdout.read().decode('utf-8')
-        self.send_response(self.iopub_socket, 'stream', {
-            'name': 'stdout',
-            'text': '%s' % command_result
-        })
+        self.send_response(
+            self.iopub_socket,
+            'stream',
+            {'name': 'stdout', 'text': f'{command_result}'},
+        )
         return ''
 
     def _link_extra_includes(self, swift_module_search_path, include_dir):
@@ -536,7 +535,8 @@ class SwiftKernel(Kernel):
                 pass
             except Error as e:
                 raise PackageInstallException(
-                        'Failed to stat scratchwork base path: %s' % str(e))
+                    f'Failed to stat scratchwork base path: {str(e)}'
+                )
             os.symlink(target, link_name)
 
     def _install_packages(self, packages, swiftpm_flags, extra_include_commands,
@@ -584,7 +584,8 @@ class SwiftKernel(Kernel):
                 pass
             except Error as e:
                 raise PackageInstallException(
-                        'Failed to stat scratchwork base path: %s' % str(e))
+                    f'Failed to stat scratchwork base path: {str(e)}'
+                )
             os.symlink(user_install_location, scratchwork_base_path,
                        target_is_directory=True)
 
@@ -608,7 +609,7 @@ class SwiftKernel(Kernel):
                                 result.stderr.decode('utf8')))
             include_dirs = shlex.split(result.stdout.decode('utf8'))
             for include_dir in include_dirs:
-                if include_dir[0:2] != '-I':
+                if include_dir[:2] != '-I':
                     self.log.warn(
                             'Non "-I" output from '
                             '%%install-extra-include-command: %s' % include_dir)
@@ -673,9 +674,9 @@ class SwiftKernel(Kernel):
         package_swift = package_swift_template % (packages_specs,
                                                   packages_products)
 
-        with open('%s/Package.swift' % package_base_path, 'w') as f:
+        with open(f'{package_base_path}/Package.swift', 'w') as f:
             f.write(package_swift)
-        with open('%s/jupyterInstalledPackages.swift' % package_base_path, 'w') as f:
+        with open(f'{package_base_path}/jupyterInstalledPackages.swift', 'w') as f:
             f.write("// intentionally blank\n")
 
         # == Ask SwiftPM to build the package ==
@@ -780,14 +781,15 @@ class SwiftKernel(Kernel):
                 modulemap_contents = file.read()
                 modulemap_contents = re.sub(
                     r'header\s+"(.*?)"',
-                    lambda m: 'header "%s"' %
-                        (m.group(1) if os.path.isabs(m.group(1)) else os.path.abspath(os.path.join(src_folder, m.group(1)))),
-                    modulemap_contents
+                    lambda m: f'header "{m.group(1) if os.path.isabs(m.group(1)) else os.path.abspath(os.path.join(src_folder, m.group(1)))}"',
+                    modulemap_contents,
                 )
 
                 module_match = re.match(r'module\s+([^\s]+)\s.*{', modulemap_contents)
-                module_name = module_match.group(1) if module_match is not None else str(index)
-                modulemap_dest = os.path.join(swift_module_search_path, 'modulemap-%s' % module_name)
+                module_name = module_match[1] if module_match is not None else str(index)
+                modulemap_dest = os.path.join(
+                    swift_module_search_path, f'modulemap-{module_name}'
+                )
                 os.makedirs(modulemap_dest, exist_ok=True)
                 dst_path = os.path.join(modulemap_dest, src_filename)
 
@@ -810,8 +812,8 @@ class SwiftKernel(Kernel):
         dynamic_load_result = self._execute(dynamic_load_code)
         if not isinstance(dynamic_load_result, SuccessWithValue):
             raise PackageInstallException(
-                    'Install Error: dlopen error: %s' % \
-                            str(dynamic_load_result))
+                f'Install Error: dlopen error: {str(dynamic_load_result)}'
+            )
         if dynamic_load_result.value_description().endswith('nil'):
             raise PackageInstallException('Install Error: dlopen error. Run '
                                         '`String(cString: dlerror())` to see '
@@ -824,8 +826,7 @@ class SwiftKernel(Kernel):
         self.already_installed_packages = True
 
     def _execute(self, code):
-        locationDirective = '#sourceLocation(file: "%s", line: 1)' % (
-            self._file_name_for_source_location())
+        locationDirective = f'#sourceLocation(file: "{self._file_name_for_source_location()}", line: 1)'
         codeWithLocationDirective = locationDirective + '\n' + code
         result = self.target.EvaluateExpression(
                 codeWithLocationDirective, self.expr_opts)
@@ -864,16 +865,16 @@ class SwiftKernel(Kernel):
     def _read_byte_array(self, sbvalue):
         get_address_error = lldb.SBError()
         address = sbvalue \
-                .GetChildMemberWithName('address') \
-                .GetData() \
-                .GetAddress(get_address_error, 0)
+                    .GetChildMemberWithName('address') \
+                    .GetData() \
+                    .GetAddress(get_address_error, 0)
         if get_address_error.Fail():
-            raise Exception('getting address: %s' % str(get_address_error))
+            raise Exception(f'getting address: {str(get_address_error)}')
 
         get_count_error = lldb.SBError()
         count_data = sbvalue \
-                .GetChildMemberWithName('count') \
-                .GetData()
+                    .GetChildMemberWithName('count') \
+                    .GetData()
         if self._int_bitwidth == 32:
             count = count_data.GetSignedInt32(get_count_error, 0)
         elif self._int_bitwidth == 64:
@@ -882,7 +883,7 @@ class SwiftKernel(Kernel):
             raise Exception('Unsupported integer bitwidth %d' %
                             self._int_bitwidth)
         if get_count_error.Fail():
-            raise Exception('getting count: %s' % str(get_count_error))
+            raise Exception(f'getting count: {str(get_count_error)}')
 
         # ReadMemory requires that count is positive, so early-return an empty
         # byte array when count is 0.
@@ -892,7 +893,7 @@ class SwiftKernel(Kernel):
         get_data_error = lldb.SBError()
         data = self.process.ReadMemory(address, count, get_data_error)
         if get_data_error.Fail():
-            raise Exception('getting data: %s' % str(get_data_error))
+            raise Exception(f'getting data: {str(get_data_error)}')
 
         return data
 
@@ -906,7 +907,7 @@ class SwiftKernel(Kernel):
                 to: KernelCommunicator.ParentMessage(json: %s))
         """ % json.dumps(json.dumps(squash_dates(self._parent_header))))
         if isinstance(result, ExecutionResultError):
-            raise Exception('Error setting parent message: %s' % result)
+            raise Exception(f'Error setting parent message: {result}')
 
     def _get_pretty_main_thread_stack_trace(self):
         stack_trace = []
@@ -940,12 +941,14 @@ class SwiftKernel(Kernel):
         })
 
     def _send_exception_report(self, while_doing, e):
-        self._send_iopub_error_message([
-            'Kernel is in a bad state. Try restarting the kernel.',
-            '',
-            'Exception in `%s`:' % while_doing,
-            str(e)
-        ])
+        self._send_iopub_error_message(
+            [
+                'Kernel is in a bad state. Try restarting the kernel.',
+                '',
+                f'Exception in `{while_doing}`:',
+                str(e),
+            ]
+        )
 
     def _execute_cell(self, code):
         self._set_parent_message()
@@ -1039,8 +1042,7 @@ class SwiftKernel(Kernel):
                 # (plus some other ugly traceback that we should eventually
                 # figure out how to suppress), so this block of code only needs
                 # to add a traceback.
-                traceback = []
-                traceback.append('Current stack trace:')
+                traceback = ['Current stack trace:']
                 traceback += [
                     '\t%s' % frame
                     for frame in self._get_pretty_main_thread_stack_trace()
